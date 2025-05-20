@@ -16,11 +16,15 @@ def main
     case line
     when 'QUIT'
       break
+    when 'CLEAR'
+      system('clear') if RUBY_PLATFORM =~ /linux|bsd|darwin/
+      system('cls') if RUBY_PLATFORM =~ /mswin|mingw|cygwin/
     when 'HELP'
       puts "\nAvailable commands:"
       puts '  RUN      - Run the program (not implemented yet)'
       puts '  NEW      - Clear the program (not implemented yet)'
       puts '  LIST     - List the program (not implemented yet)'
+      puts '  CLEAR    - Clear the screen'
       puts '  QUIT     - Exit the interpreter'
     else
       puts "> #{line}"
