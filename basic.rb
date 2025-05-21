@@ -4,6 +4,7 @@ require 'readline'
 $token = ''  # stores current token
 $buffer = {}  # Stores the program lines
 $current_pos = 0  # current position for PRINT
+$variables = {}
 
 # Scan a line of BASIC code to extract the next token
 def scan(line)
@@ -81,6 +82,13 @@ def get_identifier(line)
   name
 end
 
+def run
+  $buffer.keys.sort.each do |num| 
+    line = $buffer[num]
+    execute(num, line)
+  end
+end
+
 def execute(num, line)
   begin
     line = line.chars if line.is_a?(String)
@@ -89,6 +97,8 @@ def execute(num, line)
     case $token
     when 'PRINT'
       print_statement(line)
+    when 'LET'
+      let_statement(line)
     else
       puts "Unknown statement: #{$token}"
     end
@@ -97,10 +107,27 @@ def execute(num, line)
   end
 end
 
-def run
-  $buffer.keys.sort.each do |num| 
-    line = $buffer[num]
-    execute(num, line)
+def let_statement(line)
+  line_text = line.is_a?(Array) ? line.join : line.to_s
+  line_text.strip!
+  
+  if !line_text.include?('=')
+    puts 'Missing "=" in variable definition!'
+    raise "Missing equals sign"
+  end
+    
+  # Split into variable name and expression
+  parts = line_text.split('=', 2)
+  var_name = parts[0].strip
+  expr_text = parts[1].strip
+  
+  if expr_text.empty?
+    puts 'Missing variable value!'
+    raise "Missing value"
+  else
+    # For now, we'll just handle simple numeric values
+    value = expr_text.to_i
+    $variables[var_name] = value
   end
 end
 
@@ -108,43 +135,55 @@ def print_statement(line)
   line = line.is_a?(Array) ? line.join.strip.chars : line.to_s.strip.chars
   scan(line)
   
-  # Track position for future features
   $current_pos = 0 if !defined?($current_pos)
-  new_line = true  # Whether to add newline at the end
+  new_line = true
   
   while true
     if $token == ''
       break
     elsif $token.is_a?(String) && $token[0] == '"'
-      # String literal
-      text = $token[1..-2]  # Remove quotes
+      # string handling
+      text = $token[1..-2]  # remove quotation marks
       print text
       $current_pos += text.length
       scan(line)
+    elsif $token.is_a?(String) && $variables.key?($token)
+      # variable handling
+      variable_name = $token
+      variable_value = $variables[variable_name]
+      print variable_value
+      $current_pos += variable_value.to_s.length
+      scan(line)
+    elsif $token.is_a?(Integer) || $token.is_a?(Float)
+      # numeric literal handling
+      value = $token
+      print value
+      $current_pos += value.to_s.length
+      scan(line)
     else
-      scan(line)  # Skip non-string tokens for now
+      # unsupported token, skip
+      scan(line)
     end
     
-    # Check for separator
+    # separator handling
     if $token == ','
-      print ' '  # Add space for comma
+      print ' '
       $current_pos += 1
       scan(line)
     elsif $token == ';'
-      # Semicolon - no space, suppress newline if at end
       scan(line)
-      new_line = ($token != '')  # No newline if semicolon at end
+      new_line = ($token != '')
     else
       break
     end
   end
   
-  # Add newline unless suppressed by trailing semicolon
   if new_line
     puts
     $current_pos = 0
   end
 end
+
 
 
 # Enhanced main function with program management
@@ -177,6 +216,7 @@ def main
         system('clear') if RUBY_PLATFORM =~ /linux|bsd|darwin/
         system('cls') if RUBY_PLATFORM =~ /mswin|mingw|cygwin/
       when 'RUN'
+        $variables = {}
         run
       when 'HELP'
         puts "\nAvailable commands:"
