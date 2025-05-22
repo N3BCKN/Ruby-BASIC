@@ -1,5 +1,3 @@
-require 'readline'
-
 # Global variables on top
 $token = ''  # stores current token
 $buffer = {}  # Stores the program lines
@@ -17,7 +15,7 @@ def scan(line)
     $token = number(line)
   elsif line[0] =~ /[A-Z]/  # Keywords and identifiers
     $token = get_identifier(line)
-  elsif line[0] =~ /[+\-*\/\(\)=<>,;:\^]/  # Operators
+  elsif line[0] =~ /[+\-*\/\(\)=<>,;:\^&|~]/  # Operators z
     $token = line.shift
   elsif line[0] == '"'  # Strings
     $token = string(line)
@@ -91,7 +89,12 @@ end
 
 def execute(num, line)
   begin
-    line = line.chars if line.is_a?(String)
+    line_str = line.is_a?(Array) ? line.join : line.to_s
+    line = line_str.chars if line.is_a?(String)
+    
+    # Save original line for possible assignment detection
+    original_line = line.dup
+    
     scan(line)
     
     case $token
@@ -100,7 +103,14 @@ def execute(num, line)
     when 'LET'
       let_statement(line)
     else
-      puts "Unknown statement: #{$token}"
+      # Check if this starts with an existing variable name
+      if $token.is_a?(String) && $variables.key?($token) && 
+         line_str.include?('=')
+        # This is an operation on an existing variable
+        let_statement(original_line)
+      else
+        puts "Unknown statement: #{$token}"
+      end
     end
   rescue StandardError => e
     puts "Line #{num}: Execution failed! #{e}"
@@ -125,8 +135,10 @@ def let_statement(line)
     puts 'Missing variable value!'
     raise "Missing value"
   else
-    # For now, we'll just handle simple numeric values
-    value = expr_text.to_i
+    # Convert expression to char array for parsing
+    expr_list = expr_text.chars
+    scan(expr_list)
+    value = expression(expr_list)
     $variables[var_name] = value
   end
 end
@@ -142,30 +154,21 @@ def print_statement(line)
     if $token == ''
       break
     elsif $token.is_a?(String) && $token[0] == '"'
-      # string handling
-      text = $token[1..-2]  # remove quotation marks
+      # Obsługa ciągów znaków
+      text = $token[1..-2]  # Usuń cudzysłowy
       print text
       $current_pos += text.length
       scan(line)
-    elsif $token.is_a?(String) && $variables.key?($token)
-      # variable handling
-      variable_name = $token
-      variable_value = $variables[variable_name]
-      print variable_value
-      $current_pos += variable_value.to_s.length
-      scan(line)
-    elsif $token.is_a?(Integer) || $token.is_a?(Float)
-      # numeric literal handling
-      value = $token
-      print value
-      $current_pos += value.to_s.length
-      scan(line)
     else
-      # unsupported token, skip
-      scan(line)
+      # Obsługa wyrażeń - pełna ewaluacja z operacjami matematycznymi
+      result = expression(line)
+      unless result.nil?
+        print result
+        $current_pos += result.to_s.length
+      end
     end
     
-    # separator handling
+    # Obsługa separatorów
     if $token == ','
       print ' '
       $current_pos += 1
@@ -184,7 +187,175 @@ def print_statement(line)
   end
 end
 
+def expression(line)
+  bitwise_or(line)
+end
 
+def bitwise_or(line)
+  a = bitwise_and(line)
+  return nil if a.nil?
+  
+  while $token == '|' || $token == 'OR'
+    op = $token
+    scan(line)
+    b = bitwise_and(line)
+    return nil if b.nil?
+    
+    # bitwise OR for integers, logical OR for others
+    if op == '|' || op == 'OR'
+      if a.is_a?(Integer) && b.is_a?(Integer)
+        a = a | b  # bitwise OR
+      else
+        a = (a != 0 || b != 0) ? 1 : 0  # logical OR
+      end
+    end
+  end
+  a
+end
+
+def bitwise_and(line)
+  a = add_sub(line)
+  return nil if a.nil?
+  
+  while $token == '&' || $token == 'AND'
+    op = $token
+    scan(line)
+    b = add_sub(line)
+    return nil if b.nil?
+    
+    # bitwise AND for integers, logical AND for others
+    if op == '&' || op == 'AND'
+      if a.is_a?(Integer) && b.is_a?(Integer)
+        a = a & b  # bitwise AND
+      else
+        a = (a != 0 && b != 0) ? 1 : 0  # logical AND
+      end
+    end
+  end
+  a
+end 
+
+
+def add_sub(line)
+  a = term(line)
+  return nil if a.nil?
+  
+  while $token == '+' || $token == '-'
+    op = $token
+    scan(line)
+    b = term(line)
+    return nil if b.nil?
+    
+    if op == '+'
+      a += b
+    else  # op == '-'
+      a -= b
+    end
+  end
+  a
+end
+
+def term(line)
+  a = power(line)
+  return nil if a.nil?
+  
+  while $token == '*' || $token == '/'
+    op = $token
+    scan(line)
+    b = power(line)
+    return nil if b.nil?
+    
+    if op == '*'
+      a *= b
+    else  # op == '/'
+      if b == 0
+        puts 'Division by zero error!'
+        return nil
+      end
+      a /= b
+    end
+  end
+  a
+end
+
+def power(line)
+  a = factor(line)
+  return nil if a.nil?
+  
+  if $token == '^'
+    scan(line)
+    b = power(line)  # for chained operations (2^3^2)
+    return nil if b.nil?
+    a **= b
+  end
+  a
+end
+
+def factor(line)
+  return parse_number(line) if $token.is_a?(Integer) || $token.is_a?(Float)
+  return parse_string(line) if $token.is_a?(String) && $token.start_with?('"')
+  return parse_not(line) if $token == 'NOT' || $token == '~'
+  return parse_parenthesized_expr(line) if $token == '('
+  return parse_negative(line) if $token == '-'
+  return parse_variable(line) if $token.is_a?(String) && !$token.empty?
+
+  puts "Undefined token in factor: #{$token}"
+  nil
+end
+
+def parse_number(line)
+  value = $token
+  scan(line)
+  value
+end
+
+def parse_string(line)
+  value = $token[1..-2] # remove question marks 
+  scan(line)
+  value
+end
+
+def parse_not(line)
+  scan(line)
+  a = factor(line)
+  return nil if a.nil?
+
+  if a.is_a?(Integer)
+    ~a
+  else
+    (a != 0 ? 0 : 1)
+  end
+end
+
+def parse_parenthesized_expr(line)
+  scan(line)
+  a = expression(line)
+  return nil if a.nil?
+
+  if $token != ')'
+    puts 'Missing closing parenthesis!'
+    return nil
+  end
+
+  scan(line)
+  a
+end
+
+def parse_negative(line)
+  scan(line)
+  a = factor(line)
+  a.nil? ? nil : -a
+end
+
+def parse_variable(line)
+  identifier = $token
+  scan(line)
+
+  return $variables[identifier] if $variables.key?(identifier)
+
+  puts "Variable \"#{identifier}\" is not defined!"
+  nil
+end
 
 # Enhanced main function with program management
 def main
@@ -193,11 +364,8 @@ def main
 
   loop do
     begin
-      line = Readline.readline('> ', true)
-      
-      if !line.empty? && (Readline::HISTORY.length == 0 || Readline::HISTORY[-1] != line)
-        Readline::HISTORY.push(line) 
-      end
+      print '> '
+      line = gets.chomp
 
       case line
       when 'QUIT'
