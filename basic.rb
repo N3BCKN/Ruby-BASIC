@@ -5,6 +5,7 @@ $current_pos = 0  # current position for PRINT
 $variables = {}
 $line_number = 0  # Current line number
 $goto = false     # GOTO flag
+$for_loops = {}
 
 
 COMPARISON_OPERATORS = {
@@ -129,7 +130,7 @@ def execute(num, line)
     
     scan(line)
     
-    case $token
+    case $token 
     when 'PRINT'
       print_statement(line)
     when 'LET'
@@ -138,6 +139,10 @@ def execute(num, line)
       goto_statement(line)
     when 'IF'
       if_statement(num, line)
+    when 'FOR'
+      for_statement(line)
+    when 'NEXT'
+      next_statement(line)
     else
       # Check if this starts with an existing variable name
       if $token.is_a?(String) && $variables.key?($token) && 
@@ -150,6 +155,80 @@ def execute(num, line)
     end
   rescue StandardError => e
     puts "Line #{num}: Execution failed! #{e}"
+  end
+end
+
+def for_statement(line)
+  line_text = line.is_a?(Array) ? line.join : line.to_s
+  line_text.strip!
+  
+  # parse "FOR var = start TO end [STEP step]"
+  unless line_text.include?('=') && line_text.include?('TO')
+    puts "Invalid FOR syntax"
+    raise "Invalid FOR syntax"
+  end
+  
+  var_part, rest = line_text.split('=', 2)
+  var_name = var_part.strip
+  
+  start_expr, to_part = rest.split('TO', 2)
+  start_expr = start_expr.strip
+  to_part = to_part.strip
+  
+  # handle optional STEP
+  if to_part.include?('STEP')
+    end_expr, step_expr = to_part.split('STEP', 2)
+    end_expr = end_expr.strip
+    step_expr = step_expr.strip
+  else
+    end_expr = to_part
+    step_expr = "1"  # Default step is 1
+  end
+  
+  # calculate values
+  start_val = eval_expr(start_expr.chars)
+  end_val = eval_expr(end_expr.chars)
+  step_val = eval_expr(step_expr.chars)
+  
+  # initialize loop variable
+  $variables[var_name] = start_val
+  
+  # find next line after FOR
+  current_keys = $buffer.keys.sort
+  current_index = current_keys.index($line_number)
+  next_line = current_index + 1 < current_keys.length ? 
+              current_keys[current_index + 1] : $line_number
+  
+  # store loop info
+  $for_loops[var_name] = {
+    "end" => end_val,
+    "step" => step_val,
+    "line" => next_line
+  }
+end
+
+def next_statement(line)
+  var_name = line.is_a?(Array) ? line.join.strip : line.to_s.strip
+  
+  unless $for_loops.key?(var_name)
+    puts "FOR loop for variable '#{var_name}' not found"
+    raise "FOR loop not found"
+  end
+  
+  loop_info = $for_loops[var_name]
+  
+  # update loop variable
+  $variables[var_name] += loop_info["step"]
+  
+  # check loop condition
+  if (loop_info["step"] > 0 && $variables[var_name] <= loop_info["end"]) || 
+     (loop_info["step"] < 0 && $variables[var_name] >= loop_info["end"])
+    # continue loop - go back to line after FOR
+    $line_number = loop_info["line"]
+    $goto = true
+  else
+    # loop finished - remove loop info
+    $for_loops.delete(var_name)
   end
 end
 
