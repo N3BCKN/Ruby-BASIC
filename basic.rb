@@ -6,6 +6,7 @@ $variables = {}
 $line_number = 0  # Current line number
 $goto = false     # GOTO flag
 $for_loops = {}
+$arrays = {}
 
 
 COMPARISON_OPERATORS = {
@@ -143,6 +144,8 @@ def execute(num, line)
       for_statement(line)
     when 'NEXT'
       next_statement(line)
+    when 'DIM'
+      dim_statement(line)
     else
       # Check if this starts with an existing variable name
       if $token.is_a?(String) && $variables.key?($token) && 
@@ -155,6 +158,41 @@ def execute(num, line)
     end
   rescue StandardError => e
     puts "Line #{num}: Execution failed! #{e}"
+  end
+end
+
+def dim_statement(line)
+  line_text = line.is_a?(Array) ? line.join : line.to_s
+  line_text.strip!
+  
+  # format: DIM ARRAY(10, 20)
+  open_paren = line_text.index('(')
+  close_paren = line_text.index(')', open_paren)
+  
+  unless open_paren && close_paren
+    puts "Invalid DIM statement syntax"
+    raise "Invalid DIM syntax"
+  end
+  
+  array_name = line_text[0...open_paren].strip
+  dimensions_text = line_text[(open_paren + 1)...close_paren].strip
+  dimensions = dimensions_text.split(',').map(&:strip)
+  
+  # convert dimensions to numbers
+  dimension_values = dimensions.map do |dim|
+    (eval_expr(dim.chars) + 1).to_i  # +1 as BASIC arrays are 0-based
+  end
+  
+  # create the array
+  $arrays[array_name] = create_array(dimension_values)
+end
+
+# helper to create multi-dimensional arrays
+def create_array(dimensions)
+  if dimensions.length == 1
+    return [0] * dimensions[0]  # initialize with zeros
+  else
+    return Array.new(dimensions[0]) { create_array(dimensions[1..-1]) }
   end
 end
 
@@ -236,12 +274,41 @@ def let_statement(line)
   line_text = line.is_a?(Array) ? line.join : line.to_s
   line_text.strip!
   
+  # check if this is an array assignment
+  if line_text.include?('(') && line_text.include?(')') && line_text.include?('=')
+    equals_pos = line_text.index('=')
+    array_part = line_text[0...equals_pos].strip
+    expr_part = line_text[(equals_pos + 1)..-1].strip
+    
+    open_paren = array_part.index('(')
+    close_paren = array_part.index(')')
+    
+    if open_paren && close_paren
+      array_name = array_part[0...open_paren].strip
+      
+      unless $arrays.key?(array_name)
+        puts "Array not defined: #{array_name}"
+        raise "Array not defined"
+      end
+      
+      # get indices
+      indices_text = array_part[(open_paren + 1)...close_paren].strip
+      indices = indices_text.split(',').map { |idx| eval_expr(idx.strip.chars) }
+      
+      value = eval_expr(expr_part.chars)
+      
+      # assign to array element
+      set_array_value(array_name, indices, value)
+      return
+    end
+  end
+  
+  # regular variable assignment
   if !line_text.include?('=')
     puts 'Missing "=" in variable definition!'
     raise "Missing equals sign"
   end
     
-  # Split into variable name and expression
   parts = line_text.split('=', 2)
   var_name = parts[0].strip
   expr_text = parts[1].strip
@@ -250,12 +317,29 @@ def let_statement(line)
     puts 'Missing variable value!'
     raise "Missing value"
   else
-    # Convert expression to char array for parsing
-    expr_list = expr_text.chars
-    scan(expr_list)
-    value = expression(expr_list)
-    $variables[var_name] = value
+    $variables[var_name] = eval_expr(expr_text.chars)
   end
+end
+
+def set_array_value(array_name, indices, value)
+  array = $arrays[array_name]
+  
+  # navigate to the correct position
+  (0...(indices.length - 1)).each do |i|
+    index = indices[i]
+    unless array.is_a?(Array) && index >= 0 && index < array.length
+      raise "Array index out of bounds: #{index}"
+    end
+    array = array[index]
+  end
+  
+  # set the value
+  last_index = indices[-1]
+  unless array.is_a?(Array) && last_index >= 0 && last_index < array.length
+    raise "Array index out of bounds: #{last_index}"
+  end
+  
+  array[last_index] = value
 end
 
 def print_statement(line)
@@ -491,7 +575,7 @@ def factor(line)
   return parse_not(line) if $token == 'NOT' || $token == '~'
   return parse_parenthesized_expr(line) if $token == '('
   return parse_negative(line) if $token == '-'
-  return parse_variable(line) if $token.is_a?(String) && !$token.empty?
+  return parse_variable_or_array(line) if $token.is_a?(String) && !$token.empty?
 
   puts "Undefined token in factor: #{$token}"
   nil
@@ -541,14 +625,68 @@ def parse_negative(line)
   a.nil? ? nil : -a
 end
 
-def parse_variable(line)
+def parse_variable_or_array(line)
   identifier = $token
   scan(line)
+  
+  # opening parenthesis means it could be an array
+  if $token == '('
+    # check if array exists
+    if $arrays.key?(identifier)
+      indices = get_indices(line)
+      return nil if indices.nil?
 
-  return $variables[identifier] if $variables.key?(identifier)
+      begin
+        get_array_value(identifier, indices)
+      rescue StandardError => e
+        puts "Error accessing array #{identifier}: #{e}"
+        nil
+      end
+    else
+      puts "Array not defined: #{identifier}"
+      nil
+    end
+  else
+    # otherwise it's a variable
+    return $variables[identifier] if $variables.key?(identifier)
 
-  puts "Variable \"#{identifier}\" is not defined!"
-  nil
+    puts "Variable \"#{identifier}\" is not defined!"
+    nil
+  end
+end
+
+# helper functions for array access
+def get_indices(line)
+  scan(line)  # Skip '('
+  indices = []
+  
+  while $token != ')'
+    index_value = expression(line)
+    indices << index_value.to_i
+    
+    if $token == ','
+      scan(line)  # Skip comma
+    elsif $token != ')'
+      puts "Expected ',' or ')' in array index"
+      return nil
+    end
+  end
+  
+  scan(line)  # skip ')'
+  indices
+end
+
+def get_array_value(array_name, indices)
+  array = $arrays[array_name]
+  
+  indices.each do |index|
+    unless array.is_a?(Array) && index >= 0 && index < array.length
+      raise "Array index out of bounds: #{index}"
+    end
+    array = array[index]
+  end
+  
+  array
 end
 
 # Enhanced main function with program management
