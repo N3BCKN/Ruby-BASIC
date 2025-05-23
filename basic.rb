@@ -4,6 +4,16 @@ $buffer = {}  # Stores the program lines
 $current_pos = 0  # current position for PRINT
 $variables = {}
 
+
+COMPARISON_OPERATORS = {
+  '<>' => ->(a, b) { a != b },
+  '<=' => ->(a, b) { a <= b },
+  '>=' => ->(a, b) { a >= b },
+  '<'  => ->(a, b) { a < b },
+  '>'  => ->(a, b) { a > b },
+  '='  => ->(a, b) { a == b },
+}
+
 # Scan a line of BASIC code to extract the next token
 def scan(line)
   # Skip whitespace
@@ -214,13 +224,13 @@ def bitwise_or(line)
 end
 
 def bitwise_and(line)
-  a = add_sub(line)
+  a = comparison(line)
   return nil if a.nil?
   
   while $token == '&' || $token == 'AND'
     op = $token
     scan(line)
-    b = add_sub(line)
+    b = comparison(line)
     return nil if b.nil?
     
     # bitwise AND for integers, logical AND for others
@@ -234,6 +244,41 @@ def bitwise_and(line)
   end
   a
 end 
+
+
+# def bitwise_and(line)
+#   a = comparison(line)  # Zmiana tutaj - wywołuj comparison zamiast add_sub
+#   return nil if a.nil?
+#   while $token == '&' || $token == 'AND'
+#     op = $token
+#     scan(line)
+#     b = comparison(line)  # I tutaj też
+#     return nil if b.nil?  
+#     if a.is_a?(Integer) && b.is_a?(Integer)
+#       a = a & b
+#     else
+#       a = (a != 0 && b != 0) ? 1 : 0
+#     end
+#   end
+#   a
+# end
+# 
+
+def comparison(line)
+  a = add_sub(line)
+  return nil if a.nil?
+
+  if COMPARISON_OPERATORS.key?($token)
+    op = $token
+    operator_func = COMPARISON_OPERATORS[op]
+    scan(line)
+    b = add_sub(line)
+    return nil if b.nil?
+    
+    a = operator_func.call(a, b) ? 1 : 0
+  end
+  a
+end
 
 
 def add_sub(line)
@@ -272,7 +317,7 @@ def term(line)
         puts 'Division by zero error!'
         return nil
       end
-      a /= b
+      a = a.to_f / b.to_f
     end
   end
   a
