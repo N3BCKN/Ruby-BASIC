@@ -234,21 +234,34 @@ end
 def if_statement(num, line)
   text = line.is_a?(Array) ? line.join : line.to_s
   
-  # find THEN
+  # Find THEN and ELSE keywords
   then_index = text.index('THEN')
+  else_index = text.index('ELSE', then_index + 4) if then_index
+  
   if then_index.nil?
     puts 'Missing "THEN" after condition!'
     raise "Missing THEN keyword"
   end
   
-  # split into condition and action
   condition = text[0...then_index].strip
-  action = text[(then_index + 4)..-1].strip
   
-  # evaluate condition
-  if evaluate_condition(condition)
-    # execute the action
-    execute(num, action)
+  if else_index
+    # We have both THEN and ELSE
+    then_action = text[(then_index + 4)...else_index].strip
+    else_action = text[(else_index + 4)..-1].strip
+    
+    if evaluate_condition(condition)
+      execute(num, then_action)
+    else
+      execute(num, else_action)
+    end
+  else
+    # Only THEN, no ELSE
+    action = text[(then_index + 4)..-1].strip
+    
+    if evaluate_condition(condition)
+      execute(num, action)
+    end
   end
 end
 
