@@ -3,6 +3,8 @@ $token = ''  # stores current token
 $buffer = {}  # Stores the program lines
 $current_pos = 0  # current position for PRINT
 $variables = {}
+$line_number = 0  # Current line number
+$goto = false     # GOTO flag
 
 
 COMPARISON_OPERATORS = {
@@ -90,10 +92,30 @@ def get_identifier(line)
   name
 end
 
+# Update the run function to handle GOTO
 def run
-  $buffer.keys.sort.each do |num| 
-    line = $buffer[num]
-    execute(num, line)
+  line_iterator = $buffer.keys.sort.each
+  
+  begin
+    loop do
+      if $goto == false
+        $line_number = line_iterator.next
+      else
+        $goto = false
+        current_iterator = $buffer.keys.sort.each
+        current_line = current_iterator.next
+        while $line_number != current_line
+          current_line = current_iterator.next
+        end
+        line_iterator = current_iterator
+      end
+      line = $buffer[$line_number]
+      execute($line_number, line)
+    end
+  rescue StopIteration
+    # End of program
+  rescue StandardError => e
+    puts "Program terminated with error: #{e}"
   end
 end
 
@@ -112,6 +134,10 @@ def execute(num, line)
       print_statement(line)
     when 'LET'
       let_statement(line)
+    when 'GOTO'
+      goto_statement(line)
+    when 'IF'
+      if_statement(num, line)
     else
       # Check if this starts with an existing variable name
       if $token.is_a?(String) && $variables.key?($token) && 
@@ -197,6 +223,56 @@ def print_statement(line)
   end
 end
 
+def goto_statement(line)
+  line = line.is_a?(Array) ? line.join.strip.chars : line.to_s.strip.chars
+  scan(line)
+  target_line = expression(line)
+  $line_number = target_line.to_i
+  $goto = true
+end
+
+def if_statement(num, line)
+  text = line.is_a?(Array) ? line.join : line.to_s
+  
+  # find THEN
+  then_index = text.index('THEN')
+  if then_index.nil?
+    puts 'Missing "THEN" after condition!'
+    raise "Missing THEN keyword"
+  end
+  
+  # split into condition and action
+  condition = text[0...then_index].strip
+  action = text[(then_index + 4)..-1].strip
+  
+  # evaluate condition
+  if evaluate_condition(condition)
+    # execute the action
+    execute(num, action)
+  end
+end
+
+def evaluate_condition(condition)
+  COMPARISON_OPERATORS.each do |op, func|
+    next unless condition.include?(op)
+    
+    left, right = condition.split(op, 2)
+    return func.call(
+      eval_expr(left.strip.chars), 
+      eval_expr(right.strip.chars)
+    )
+  end
+  
+  # If no operator, check if value is non-zero
+  eval_expr(condition.chars) != 0
+end
+
+# helper function for expression evaluation
+def eval_expr(expr)
+  scan(expr)
+  expression(expr)
+end
+
 def expression(line)
   bitwise_or(line)
 end
@@ -244,25 +320,6 @@ def bitwise_and(line)
   end
   a
 end 
-
-
-# def bitwise_and(line)
-#   a = comparison(line)  # Zmiana tutaj - wywołuj comparison zamiast add_sub
-#   return nil if a.nil?
-#   while $token == '&' || $token == 'AND'
-#     op = $token
-#     scan(line)
-#     b = comparison(line)  # I tutaj też
-#     return nil if b.nil?  
-#     if a.is_a?(Integer) && b.is_a?(Integer)
-#       a = a & b
-#     else
-#       a = (a != 0 && b != 0) ? 1 : 0
-#     end
-#   end
-#   a
-# end
-# 
 
 def comparison(line)
   a = add_sub(line)
