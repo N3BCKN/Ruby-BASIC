@@ -7,6 +7,8 @@ $line_number = 0  # Current line number
 $goto = false     # GOTO flag
 $for_loops = {}
 $arrays = {}
+$user_functions = {}
+$gosub_stack = [] 
 
 
 COMPARISON_OPERATORS = {
@@ -146,6 +148,14 @@ def execute(num, line)
       next_statement(line)
     when 'DIM'
       dim_statement(line)
+    when 'DEF'
+      def_statement(line)
+    when 'GOSUB'
+      gosub_statement(line)
+    when 'RETURN'
+      return_statement(line)
+    when 'END'
+      end_statement(line)
     else
       # Check if this starts with an existing variable name
       if $token.is_a?(String) && $variables.key?($token) && 
@@ -156,9 +166,135 @@ def execute(num, line)
         puts "Unknown statement: #{$token}"
       end
     end
+  rescue StopIteration
+    # Propagate StopIteration exception to run 
+    raise
   rescue StandardError => e
     puts "Line #{num}: Execution failed! #{e}"
   end
+end
+
+def def_statement(line)
+  line_text = line.is_a?(Array) ? line.join : line.to_s
+  line_text.strip!
+  
+  # check format: DEF FN name(param) = expression
+  unless line_text.start_with?('FN') && line_text.include?('=')
+    puts "Invalid DEF FN syntax"
+    raise "Invalid DEF FN syntax"
+  end
+  
+  equals_pos = line_text.index('=')
+  left_part = line_text[0...equals_pos].strip
+  expression_part = line_text[(equals_pos + 1)..-1].strip
+  
+  # parse function name and parameters
+  fn_part = left_part[2..-1].strip  # Remove "FN"
+  
+  open_paren = fn_part.index('(')
+  close_paren = fn_part.index(')', open_paren)
+  
+  unless open_paren && close_paren
+    puts "Invalid function definition"
+    raise "Invalid function syntax"
+  end
+  
+  function_name = fn_part[0...open_paren].strip
+  params_text = fn_part[(open_paren + 1)...close_paren].strip
+  parameters = params_text.empty? ? [] : params_text.split(',').map(&:strip)
+  
+  # store function definition
+  $user_functions[function_name] = {
+    'parameters' => parameters,
+    'expression' => expression_part
+  }
+end
+
+def call_user_function(function_name, arguments)
+  unless $user_functions.key?(function_name)
+    puts "Function #{function_name} not defined"
+    return nil
+  end
+  
+  function_def = $user_functions[function_name]
+  parameters = function_def['parameters']
+  expression_text = function_def['expression']
+  
+  # check argument count
+  if arguments.length != parameters.length
+    puts "Function #{function_name} expects #{parameters.length} arguments, got #{arguments.length}"
+    return nil
+  end
+  
+  # save current values of parameters if they exist as variables
+  saved_values = {}
+  parameters.each do |param|
+    saved_values[param] = $variables[param] if $variables.key?(param)
+  end
+  
+  # assign arguments to parameters
+  parameters.each_with_index do |param, i|
+    $variables[param] = arguments[i]
+  end
+  
+  # evaluate function expression
+  begin
+    result = eval_expr(expression_text.chars)
+  rescue StandardError => e
+    puts "Error evaluating function: #{e}"
+    result = nil
+  end
+  
+  # restore original values
+  parameters.each do |param|
+    if saved_values.key?(param)
+      $variables[param] = saved_values[param]
+    else
+      $variables.delete(param)
+    end
+  end
+  
+  result
+end
+
+def gosub_statement(line)
+  line_text = line.is_a?(Array) ? line.join : line.to_s
+  line_text.strip!
+  
+  # get target line number
+  target_line = eval_expr(line_text.chars).to_i
+  
+  # save return position (next line)
+  current_keys = $buffer.keys.sort
+  current_index = current_keys.index($line_number)
+  
+  if current_index + 1 < current_keys.length
+    return_line = current_keys[current_index + 1]
+  else
+    return_line = $line_number  # Last line, remember it
+  end
+  
+  $gosub_stack.push(return_line)
+  
+  # jump to target line
+  $line_number = target_line
+  $goto = true
+end
+
+def return_statement(line)
+  if $gosub_stack.empty?
+    puts "RETURN without GOSUB"
+    raise "RETURN without GOSUB"
+  end
+  
+  return_line = $gosub_stack.pop
+  $line_number = return_line
+  $goto = true
+end
+
+def end_statement(line)
+  $gosub_stack = []  # Clear GOSUB stack
+  raise StopIteration  # Signal program end
 end
 
 def dim_statement(line)
@@ -575,10 +711,47 @@ def factor(line)
   return parse_not(line) if $token == 'NOT' || $token == '~'
   return parse_parenthesized_expr(line) if $token == '('
   return parse_negative(line) if $token == '-'
+  return parse_user_function(line) if $token == 'FN'
   return parse_variable_or_array(line) if $token.is_a?(String) && !$token.empty?
 
   puts "Undefined token in factor: #{$token}"
   nil
+end
+
+def parse_user_function(line)
+  scan(line)
+  
+  if !$token.is_a?(String)
+    puts "Expected function name after FN"
+    return nil
+  end
+  
+  function_name = $token
+  scan(line)
+  
+  if $token != '('
+    puts "Expected '(' after function name"
+    return nil
+  end
+  
+  # get arguments
+  arguments = []
+  scan(line)  # skip '('
+  
+  while $token != ')'
+    arg_value = expression(line)
+    arguments << arg_value
+    
+    if $token == ','
+      scan(line)  # skip comma
+    elsif $token != ')'
+      puts "Expected ',' or ')' in function call"
+      return nil
+    end
+  end
+  
+  scan(line)  # skip ')'
+  call_user_function(function_name, arguments)
 end
 
 def parse_number(line)
