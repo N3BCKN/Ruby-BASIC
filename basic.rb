@@ -22,6 +22,32 @@ COMPARISON_OPERATORS = {
   '='  => ->(a, b) { a == b },
 }
 
+BUILT_IN_FUNCTIONS = {
+  # Math functions (1 argument)
+  'ABS' => [->(x) { x.abs }, 1],
+  'SGN' => [->(x) { x < 0 ? -1 : (x == 0 ? 0 : 1) }, 1],
+  'SQR' => [->(x) { Math.sqrt(x) }, 1],
+  'INT' => [->(x) { x.floor }, 1],
+  'LOG' => [->(x) { Math.log(x) }, 1],
+  'EXP' => [->(x) { Math.exp(x) }, 1],
+  'SIN' => [->(x) { Math.sin(x) }, 1],
+  'COS' => [->(x) { Math.cos(x) }, 1],
+  'TAN' => [->(x) { Math.tan(x) }, 1],
+  'ATN' => [->(x) { Math.atan(x) }, 1],
+  'LEN' => [->(x) { x.is_a?(String) ? x.length : x.to_s.length }, 1],
+  
+  # String functions (1 argument)
+  'STR$' => [->(x) { x.to_s }, 1],
+  'CHR$' => [->(x) { x.to_i.chr }, 1],
+  
+  # Special functions
+  'RND' => [-> { rand }, 0],  # No arguments
+  'VAL' => [nil, 1],          # Special handling
+  'LEFT$' => [nil, 2],        # Special handling
+  'RIGHT$' => [nil, 2],       # Special handling
+  'MID$' => [nil, 3]          # Special handling
+}
+
 # Scan a line of BASIC code to extract the next token
 def scan(line)
   # Skip whitespace
@@ -668,8 +694,20 @@ def print_statement(line)
       # Obsługa wyrażeń - pełna ewaluacja z operacjami matematycznymi
       result = expression(line)
       unless result.nil?
-        print result
-        $current_pos += result.to_s.length
+        # handle TAB function
+        if result.is_a?(Array) && result[0] == 'TAB'
+          target_pos = result[1]
+          # Only move forward, never backward
+          if $current_pos < target_pos
+            spaces = ' ' * (target_pos - $current_pos)
+            print spaces
+            $current_pos = target_pos
+          end
+        else
+          # normal result
+          print result
+          $current_pos += result.to_s.length
+        end
       end
     end
     
@@ -882,10 +920,145 @@ def factor(line)
   return parse_parenthesized_expr(line) if $token == '('
   return parse_negative(line) if $token == '-'
   return parse_user_function(line) if $token == 'FN'
+  return parse_tab(line) if $token == 'TAB'
+  return parse_buildin_function(line) if BUILT_IN_FUNCTIONS.key?($token)  
   return parse_variable_or_array(line) if $token.is_a?(String) && !$token.empty?
 
   puts "Undefined token in factor: #{$token}"
   nil
+end
+
+def parse_tab(line)
+  scan(line)
+  
+  if $token != '('
+    puts "Expected '(' after TAB"
+    return nil
+  end
+  
+  scan(line)  # Skip '('
+  col_position = expression(line)
+  
+  if col_position.nil?
+    return nil
+  end
+  
+  if $token != ')'
+    puts "Expected ')' after TAB argument"
+    return nil
+  end
+  
+  scan(line)  # Skip ')'
+  
+  # Return a special format that print_statement can recognize
+  return ['TAB', col_position.to_i]
+end
+
+def parse_buildin_function(line)
+  func_name = $token
+  func_def, arg_count = BUILT_IN_FUNCTIONS[func_name]
+  scan(line)
+  
+  # Handle RND (no arguments needed)
+  if func_name == 'RND'
+    # Optional parentheses for RND
+    if $token == '('
+      scan(line)  # Skip '('
+      if $token == ')'
+        scan(line)  # Skip ')'
+      else
+        # If argument provided, use it but ignore value
+        expression(line)
+        scan(line) if $token == ')'
+      end
+    end
+    return rand  # Always return random value between 0 and 1
+  end
+  
+  # Standard function with arguments
+  if $token != '('
+    puts "Expected '(' after #{func_name}"
+    return nil
+  end
+  
+  if arg_count == 1
+    # Single argument
+    scan(line)  # Skip '('
+    arg_value = expression(line)
+    
+    if $token != ')'
+      puts "Expected ')' after #{func_name} argument"
+      return nil
+    end
+    scan(line)  # Skip ')'
+    
+    # Special handling for VAL
+    if func_name == 'VAL'
+      begin
+        if arg_value.is_a?(String)
+          return arg_value.include?('.') ? arg_value.to_f : arg_value.to_i
+        end
+        return arg_value
+      rescue
+        puts "Cannot convert '#{arg_value}' to number"
+        return 0
+      end
+    end
+    
+    # Standard function
+    begin
+      return func_def.call(arg_value)
+    rescue => e
+      puts "Error in #{func_name}: #{e}"
+      return nil
+    end
+  else
+    # Multiple argument functions (LEFT$, RIGHT$, MID$)
+    args = []
+    scan(line)  # Skip '('
+    
+    arg_count.times do |i|
+      # Get argument
+      arg_value = expression(line)
+      args << arg_value
+      
+      # Check separator
+      if i < arg_count - 1
+        if $token != ','
+          puts "Expected ',' after argument #{i+1}"
+          return nil
+        end
+        scan(line)  # Skip ','
+      end
+    end
+    
+    if $token != ')'
+      puts "Expected ')' after arguments"
+      return nil
+    end
+    scan(line)  # Skip ')'
+    
+    # Process string functions
+    begin
+      string_arg = args[0].to_s
+      
+      case func_name
+      when 'LEFT$'
+        n = args[1].to_i
+        return string_arg[0...n]
+      when 'RIGHT$'
+        n = args[1].to_i
+        return n > 0 ? string_arg[-n..-1] : ''
+      when 'MID$'
+        start = args[1].to_i - 1  # BASIC starts at 1
+        length = args[2].to_i
+        return string_arg[start, length]
+      end
+    rescue => e
+      puts "Error in #{func_name}: #{e}"
+      return ''
+    end
+  end
 end
 
 def parse_user_function(line)
