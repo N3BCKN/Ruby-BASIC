@@ -126,14 +126,72 @@ end
 def execute(num, line)
   begin
     line_str = line.is_a?(Array) ? line.join : line.to_s
+    
+    # fandle full-line REM statements
+    if line_str.strip.start_with?('REM')
+      return  # simply ignore REM lines
+    end
+    
+    # handle inline REM comments
+    # find REM parts that are outside of string literals
+    in_string = false
+    rem_pos = -1
+    
+    (0...line_str.length - 2).each do |i|
+      if line_str[i] == '"'
+        in_string = !in_string
+      elsif !in_string && i + 2 < line_str.length
+        if line_str[i, 3].upcase == 'REM'
+          rem_pos = i
+          break
+        end
+      end
+    end
+    
+    # if REM found, truncate the line
+    if rem_pos >= 0
+      line_str = line_str[0...rem_pos].strip
+    end
+    
+    # handle multiple statements in the same line
+    if line_str.include?(':')
+     # find colon outside strings
+        in_string = false
+        real_colons = []
+  
+        line_str.chars.each_with_index do |char, i|
+          if char == '"'
+            in_string = !in_string
+          elsif char == ':' && !in_string
+            real_colons << i
+          end
+        end
+
+      # if colons are found, split this line and do recursion
+      unless real_colons.empty?
+        first_part = line_str[0...real_colons[0]]
+        second_part = line_str[(real_colons[0] + 1)..-1]
+
+        # execute first line
+        execute(num, first_part)
+        # executre second line
+        execute(num, second_part)
+        return
+      end
+    end
+    
+    # continue with normal execution...
     line = line_str.chars if line.is_a?(String)
-    
-    # Save original line for possible assignment detection
-    original_line = line.dup
-    
+
     scan(line)
     
-    case $token 
+    # save original line for possible assignment detection
+    original_line = line.dup
+    
+    case $token
+    when 'REM'
+      # Do nothing for REM statements
+      return 
     when 'PRINT'
       print_statement(line)
     when 'LET'
@@ -156,6 +214,9 @@ def execute(num, line)
       return_statement(line)
     when 'END'
       end_statement(line)
+    when ''
+      # Empty line after processing - do nothing
+      return
     else
       # Check if this starts with an existing variable name
       if $token.is_a?(String) && $variables.key?($token) && 
@@ -163,6 +224,8 @@ def execute(num, line)
         # This is an operation on an existing variable
         let_statement(original_line)
       else
+        require 'byebug'
+        byebug
         puts "Unknown statement: #{$token}"
       end
     end
