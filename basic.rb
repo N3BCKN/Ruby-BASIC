@@ -266,6 +266,8 @@ def execute(num, line)
       read_statement(line)
     when 'RESTORE'
       restore_statement(line)
+    when 'INPUT'
+      input_statement(line) 
     when ''
       # Empty line after processing - do nothing
       return
@@ -284,6 +286,78 @@ def execute(num, line)
     raise
   rescue StandardError => e
     puts "Line #{num}: Execution failed! #{e}"
+  end
+end
+
+def input_statement(line)
+  line_text = line.is_a?(Array) ? line.join : line.to_s
+  line_text.strip!
+  
+  # check for prompt string
+  prompt = ""
+  var_name = ""
+  
+  if line_text.start_with?('"')
+    closing_quote = line_text.index('"', 1)
+    
+    if closing_quote
+      prompt = line_text[1...closing_quote]
+      remaining = line_text[(closing_quote + 1)..-1].strip
+      
+      if remaining.start_with?(';')
+        var_name = remaining[1..-1].strip
+      else
+        var_name = remaining
+      end
+    end
+  else
+    var_name = line_text
+  end
+  
+  # display prompt if exists
+  print prompt unless prompt.empty?
+  
+  # get user input
+  user_input = gets.chomp
+  
+  # convert to appropriate type
+  if user_input.include?('.')
+    value = user_input.to_f
+  else
+    begin
+      value = Integer(user_input)  # use Integer() to properly convert to integer
+    rescue ArgumentError
+      value = user_input.to_f  # try float if integer fails
+    end
+  end
+  
+  # assign value (handling arrays too)
+  if var_name.include?('(') && var_name.include?(')')
+    # array element
+    open_paren = var_name.index('(')
+    close_paren = var_name.index(')')
+    array_name = var_name[0...open_paren].strip
+    
+    unless $arrays.key?(array_name)
+      puts "Array not defined: #{array_name}"
+      raise "Array not defined"
+    end
+    
+    indices_text = var_name[(open_paren + 1)...close_paren].strip
+    indices = indices_text.split(',').map do |idx|
+      idx_val = idx.strip
+      if $variables.key?(idx_val)
+        $variables[idx_val].to_i
+      else
+        idx_val.to_i
+      end
+    end
+    
+    set_array_value(array_name, indices, value)
+  else
+    # regular variable
+    var_name = var_name.gsub(/\s+/, '')  # remove all whitespace
+    $variables[var_name] = value
   end
 end
 
@@ -1205,6 +1279,56 @@ def get_array_value(array_name, indices)
   array
 end
 
+def save_file(filename)
+  # add .bas extension if it's not there 
+  filename = "#{filename}.bas" unless filename.downcase.end_with?('.bas')
+  
+  begin
+    File.open(filename, 'w') do |f|
+      $buffer.keys.sort.each do |num| # fetch data from buffer to file 
+        f.puts "#{num} #{$buffer[num]}"
+      end
+    end
+    puts "Program saved to #{filename}"
+    return true
+  rescue StandardError => e
+    puts "Failed to save file: #{e}"
+    return false
+  end
+end 
+
+def load_file(filename)
+  # check file extension
+  unless filename.downcase.end_with?('.bas')
+    puts "Error: Only .bas files are supported"
+    return false
+  end
+  
+  begin
+    File.open(filename, 'r') do |f|
+      $buffer = {}  # reset buffer
+      f.read.split("\n").each do |line|
+        begin
+          next if line.strip.empty?  # skip empty lines
+          parts = line.split(' ', 2)
+          next if !parts[0].match?(/^\d+$/)  # skip lines without numbers
+          
+          num = parts[0].to_i
+          src = parts.length > 1 ? parts[1] : ""
+          $buffer[num] = src
+        rescue StandardError => e
+          puts "Error parsing line: #{line}, #{e}"
+        end
+      end
+    end
+    puts "Program loaded from #{filename}"
+    return true
+  rescue StandardError => e
+    puts "Failed to load file: #{e}"
+    return false
+  end
+end
+
 # Enhanced main function with program management
 def main
   puts "Ruby Altair Basic 0.0.1, 1975-#{Time.now.year}"
@@ -1216,6 +1340,14 @@ def main
       line = gets.chomp
 
       case line
+      when 'LOAD'
+        print 'Filename: '
+        filename = gets.chomp
+        load_file(filename)
+      when 'SAVE'
+        print 'Filename: '
+        filename = gets.chomp
+        save_file(filename)
       when 'QUIT'
         break
       when 'NEW'
@@ -1236,9 +1368,11 @@ def main
         run
       when 'HELP'
         puts "\nAvailable commands:"
-        puts '  RUN      - Run the program (not implemented yet)'
+        puts '  RUN      - Run the program'
         puts '  NEW      - Clear the program'
         puts '  LIST     - List the program'
+        puts '  LOAD     - Load a program from file (.bas)'
+        puts '  SAVE     - Save program to file (.bas)'
         puts '  CLEAR    - Clear the screen'
         puts '  QUIT     - Exit the interpreter'
       else
