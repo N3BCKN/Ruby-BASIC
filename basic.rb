@@ -9,6 +9,8 @@ $for_loops = {}
 $arrays = {}
 $user_functions = {}
 $gosub_stack = [] 
+$data_values = []
+$data_pointer = 0
 
 
 COMPARISON_OPERATORS = {
@@ -98,6 +100,24 @@ end
 
 # Update the run function to handle GOTO
 def run
+  # reset global values
+  $goto = false
+  $for_loops = {}
+  $gosub_stack = []
+  $data_values = []
+  $data_pointer = 0
+  
+  # first pass - collect all DATA
+  $buffer.keys.sort.each do |num|
+    line = $buffer[num]
+    line_list = line.chars
+    scan(line_list)
+    if $token == 'DATA'
+      data_statement(line_list)
+    end
+  end
+  
+  # second pass - normal execution
   line_iterator = $buffer.keys.sort.each
   
   begin
@@ -117,7 +137,7 @@ def run
       execute($line_number, line)
     end
   rescue StopIteration
-    # End of program
+    # end of program
   rescue StandardError => e
     puts "Program terminated with error: #{e}"
   end
@@ -214,6 +234,12 @@ def execute(num, line)
       return_statement(line)
     when 'END'
       end_statement(line)
+    when 'DATA'
+      data_statement(line)  # in normal execution, just skip
+    when 'READ'
+      read_statement(line)
+    when 'RESTORE'
+      restore_statement(line)
     when ''
       # Empty line after processing - do nothing
       return
@@ -224,8 +250,6 @@ def execute(num, line)
         # This is an operation on an existing variable
         let_statement(original_line)
       else
-        require 'byebug'
-        byebug
         puts "Unknown statement: #{$token}"
       end
     end
@@ -235,6 +259,89 @@ def execute(num, line)
   rescue StandardError => e
     puts "Line #{num}: Execution failed! #{e}"
   end
+end
+
+# implement DATA statement (collect data values)
+def data_statement(line)
+  line_text = line.is_a?(Array) ? line.join : line.to_s
+  line_text.strip!
+  
+  # skip if empty
+  return if line_text.empty?
+  
+  # split values by commas (respecting strings)
+  values = []
+  current_value = ''
+  in_quotes = false
+  
+  line_text.each_char do |char|
+    if char == '"'
+      in_quotes = !in_quotes
+      current_value += char
+    elsif char == ',' && !in_quotes
+      # end of value
+      values << current_value.strip
+      current_value = ''
+    else
+      current_value += char
+    end
+  end
+  
+  # add the last value
+  values << current_value.strip unless current_value.strip.empty?
+  
+  # process and add values to data_values array
+  values.each do |value|
+    next if value.empty?
+    
+    if value.start_with?('"') && value.end_with?('"')
+      # string - remove quotes
+      $data_values << value[1..-2]
+    else
+      # try to convert to number
+      begin
+        if value.include?('.')
+          $data_values << value.to_f
+        else
+          $data_values << value.to_i
+        end
+      rescue
+        # use as string if conversion fails
+        $data_values << value
+      end
+    end
+  end
+end
+# implement READ statement
+def read_statement(line)
+  line_text = line.is_a?(Array) ? line.join : line.to_s
+  line_text.strip!
+  
+  # split variable names
+  var_names = line_text.split(',').map(&:strip)
+  
+  var_names.each do |var_name|
+    next if var_name.empty?
+    
+    # check if we have enough data
+    if $data_pointer >= $data_values.length
+      puts "Out of DATA - READ beyond available data"
+      raise "Out of DATA"
+    end
+    
+    # assign value to variable
+    $variables[var_name] = $data_values[$data_pointer]
+    $data_pointer += 1
+  end
+end
+# implement RESTORE statement
+def restore_statement(line)
+  line_text = line.is_a?(Array) ? line.join : line.to_s
+  line_text.strip!
+  
+  # reset data pointer
+  $data_pointer = 0
+  
 end
 
 def def_statement(line)
