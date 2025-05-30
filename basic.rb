@@ -171,7 +171,7 @@ end
 
 def execute(num, line)
   begin
-    line_str = line.is_a?(Array) ? line.join : line.to_s
+    line_str = normalize_line(line)
     
     # fandle full-line REM statements
     if line_str.strip.start_with?('REM')
@@ -290,7 +290,7 @@ def execute(num, line)
 end
 
 def input_statement(line)
-  line_text = line.is_a?(Array) ? line.join : line.to_s
+  line_text = normalize_line(line)
   line_text.strip!
   
   # check for prompt string
@@ -363,7 +363,7 @@ end
 
 # implement DATA statement (collect data values)
 def data_statement(line)
-  line_text = line.is_a?(Array) ? line.join : line.to_s
+  line_text = normalize_line(line)
   line_text.strip!
   
   # skip if empty
@@ -414,7 +414,7 @@ def data_statement(line)
 end
 # implement READ statement
 def read_statement(line)
-  line_text = line.is_a?(Array) ? line.join : line.to_s
+  line_text = normalize_line(line)
   line_text.strip!
   
   # split variable names
@@ -436,7 +436,7 @@ def read_statement(line)
 end
 # implement RESTORE statement
 def restore_statement(line)
-  line_text = line.is_a?(Array) ? line.join : line.to_s
+  line_text = normalize_line(line)
   line_text.strip!
   
   # reset data pointer
@@ -445,7 +445,7 @@ def restore_statement(line)
 end
 
 def def_statement(line)
-  line_text = line.is_a?(Array) ? line.join : line.to_s
+  line_text = normalize_line(line)
   line_text.strip!
   
   # check format: DEF FN name(param) = expression
@@ -528,7 +528,7 @@ def call_user_function(function_name, arguments)
 end
 
 def gosub_statement(line)
-  line_text = line.is_a?(Array) ? line.join : line.to_s
+  line_text = normalize_line(line)
   line_text.strip!
   
   # get target line number
@@ -568,7 +568,7 @@ def end_statement(line)
 end
 
 def dim_statement(line)
-  line_text = line.is_a?(Array) ? line.join : line.to_s
+  line_text = normalize_line(line)
   line_text.strip!
   
   # format: DIM ARRAY(10, 20)
@@ -603,7 +603,7 @@ def create_array(dimensions)
 end
 
 def for_statement(line)
-  line_text = line.is_a?(Array) ? line.join : line.to_s
+  line_text = normalize_line(line)
   line_text.strip!
   
   # parse "FOR var = start TO end [STEP step]"
@@ -652,7 +652,7 @@ def for_statement(line)
 end
 
 def next_statement(line)
-  var_name = line.is_a?(Array) ? line.join.strip : line.to_s.strip
+  var_name = normalize_line(line)
   
   unless $for_loops.key?(var_name)
     puts "FOR loop for variable '#{var_name}' not found"
@@ -677,7 +677,7 @@ def next_statement(line)
 end
 
 def let_statement(line)
-  line_text = line.is_a?(Array) ? line.join : line.to_s
+  line_text = normalize_line(line)
   line_text.strip!
   
   # check if this is an array assignment
@@ -749,7 +749,7 @@ def set_array_value(array_name, indices, value)
 end
 
 def print_statement(line)
-  line = line.is_a?(Array) ? line.join.strip.chars : line.to_s.strip.chars
+  line = normalize_line(line).chars
   scan(line)
   
   $current_pos = 0 if !defined?($current_pos)
@@ -805,7 +805,7 @@ def print_statement(line)
 end
 
 def goto_statement(line)
-  line = line.is_a?(Array) ? line.join.strip.chars : line.to_s.strip.chars
+  line = normalize_line(line).chars
   scan(line)
   target_line = expression(line)
   $line_number = target_line.to_i
@@ -813,7 +813,7 @@ def goto_statement(line)
 end
 
 def if_statement(num, line)
-  text = line.is_a?(Array) ? line.join : line.to_s
+  text = normalize_line(line)
   
   # Find THEN and ELSE keywords
   then_index = text.index('THEN')
@@ -1277,6 +1277,10 @@ def get_array_value(array_name, indices)
   end
   
   array
+end
+
+def normalize_line(line)
+  line.is_a?(Array) ? line.join.strip : line.to_s.strip
 end
 
 def save_file(filename)
