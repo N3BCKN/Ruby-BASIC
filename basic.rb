@@ -759,13 +759,13 @@ def print_statement(line)
     if $token == ''
       break
     elsif $token.is_a?(String) && $token[0] == '"'
-      # Obsługa ciągów znaków
-      text = $token[1..-2]  # Usuń cudzysłowy
+      # handle string
+      text = $token[1..-2]  # remove quotes
       print text
       $current_pos += text.length
       scan(line)
     else
-      # Obsługa wyrażeń - pełna ewaluacja z operacjami matematycznymi
+      # for any non-string token, treat it as the start of an expression
       result = expression(line)
       unless result.nil?
         # handle TAB function
@@ -785,7 +785,7 @@ def print_statement(line)
       end
     end
     
-    # Obsługa separatorów
+    # handle separators
     if $token == ','
       print ' '
       $current_pos += 1
@@ -995,7 +995,7 @@ def factor(line)
   return parse_negative(line) if $token == '-'
   return parse_user_function(line) if $token == 'FN'
   return parse_tab(line) if $token == 'TAB'
-  return parse_buildin_function(line) if BUILT_IN_FUNCTIONS.key?($token)  
+  return parse_builtin_function(line) if BUILT_IN_FUNCTIONS.key?($token)  
   return parse_variable_or_array(line) if $token.is_a?(String) && !$token.empty?
 
   puts "Undefined token in factor: #{$token}"
@@ -1028,7 +1028,7 @@ def parse_tab(line)
   return ['TAB', col_position.to_i]
 end
 
-def parse_buildin_function(line)
+def parse_builtin_function(line)
   func_name = $token
   func_def, arg_count = BUILT_IN_FUNCTIONS[func_name]
   scan(line)
