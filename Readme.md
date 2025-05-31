@@ -1,6 +1,6 @@
 # Ruby Altair BASIC
 
-A classic BASIC interpreter written in Ruby, based on 1975 Altair BASIC written by a Paul Alan and Bill Gates for Altair 8800 machine.
+A classic BASIC interpreter written in Ruby, based on 1975 Altair BASIC written by Paul Allen and Bill Gates for Altair 8800 machine.
 With some features borrowed from later MS BASIC versions. 
 
 ## Requirements
