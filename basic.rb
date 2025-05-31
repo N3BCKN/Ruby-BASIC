@@ -48,20 +48,20 @@ BUILT_IN_FUNCTIONS = {
   'MID$' => [nil, 3]          # Special handling
 }
 
-# Scan a line of BASIC code to extract the next token
+# scan a line of BASIC code to extract the next token
 def scan(line)
-  # Skip whitespace
+  # skip whitespace
   line.shift while !line.empty? && line[0] == ' '
   
   return $token = '' if line.empty?
   
-  if line[0] =~ /\d/  # Numbers
+  if line[0] =~ /\d/  
     $token = number(line)
-  elsif line[0] =~ /[A-Z]/  # Keywords and identifiers
+  elsif line[0] =~ /[A-Z]/  
     $token = get_identifier(line)
-  elsif line[0] =~ /[+\-*\/\(\)=<>,;:\^&|~]/  # Operators z
+  elsif line[0] =~ /[+\-*\/\(\)=<>,;:\^&|~]/  
     $token = line.shift
-  elsif line[0] == '"'  # Strings
+  elsif line[0] == '"'  
     $token = string(line)
   else
     puts "Unexpected character: #{line[0]}"
@@ -269,20 +269,19 @@ def execute(num, line)
     when 'INPUT'
       input_statement(line) 
     when ''
-      # Empty line after processing - do nothing
+      # empty line after processing - do nothing
       return
     else
-      # Check if this starts with an existing variable name
+      # check if this starts with an existing variable name
       if $token.is_a?(String) && $variables.key?($token) && 
          line_str.include?('=')
-        # This is an operation on an existing variable
+        # this is an operation on an existing variable
         let_statement(original_line)
       else
         puts "Unknown statement: #{$token}"
       end
     end
   rescue StopIteration
-    # Propagate StopIteration exception to run 
     raise
   rescue StandardError => e
     puts "Line #{num}: Execution failed! #{e}"
@@ -541,7 +540,7 @@ def gosub_statement(line)
   if current_index + 1 < current_keys.length
     return_line = current_keys[current_index + 1]
   else
-    return_line = $line_number  # Last line, remember it
+    return_line = $line_number  # last line, remember it
   end
   
   $gosub_stack.push(return_line)
@@ -563,8 +562,8 @@ def return_statement(line)
 end
 
 def end_statement(line)
-  $gosub_stack = []  # Clear GOSUB stack
-  raise StopIteration  # Signal program end
+  $gosub_stack = []  # clear GOSUB stack
+  raise StopIteration  # signal program end
 end
 
 def dim_statement(line)
@@ -1010,7 +1009,7 @@ def parse_tab(line)
     return nil
   end
   
-  scan(line)  # Skip '('
+  scan(line)  # skip '('
   col_position = expression(line)
   
   if col_position.nil?
@@ -1022,9 +1021,9 @@ def parse_tab(line)
     return nil
   end
   
-  scan(line)  # Skip ')'
+  scan(line)  # skip ')'
   
-  # Return a special format that print_statement can recognize
+  # return a special format that print_statement can recognize
   return ['TAB', col_position.to_i]
 end
 
@@ -1087,22 +1086,22 @@ def parse_builtin_function(line)
       return nil
     end
   else
-    # Multiple argument functions (LEFT$, RIGHT$, MID$)
+    # multiple argument functions (LEFT$, RIGHT$, MID$)
     args = []
-    scan(line)  # Skip '('
+    scan(line)  # skip '('
     
     arg_count.times do |i|
-      # Get argument
+      # get argument
       arg_value = expression(line)
       args << arg_value
       
-      # Check separator
+      # check separator
       if i < arg_count - 1
         if $token != ','
           puts "Expected ',' after argument #{i+1}"
           return nil
         end
-        scan(line)  # Skip ','
+        scan(line)  # skip ','
       end
     end
     
@@ -1110,9 +1109,9 @@ def parse_builtin_function(line)
       puts "Expected ')' after arguments"
       return nil
     end
-    scan(line)  # Skip ')'
+    scan(line)  # skip ')'
     
-    # Process string functions
+    # process string functions
     begin
       string_arg = args[0].to_s
       
@@ -1247,7 +1246,7 @@ end
 
 # helper functions for array access
 def get_indices(line)
-  scan(line)  # Skip '('
+  scan(line)  # skip '('
   indices = []
   
   while $token != ')'
@@ -1255,7 +1254,7 @@ def get_indices(line)
     indices << index_value.to_i
     
     if $token == ','
-      scan(line)  # Skip comma
+      scan(line)  # skip comma
     elsif $token != ')'
       puts "Expected ',' or ')' in array index"
       return nil
@@ -1333,7 +1332,7 @@ def load_file(filename)
   end
 end
 
-# Enhanced main function with program management
+# enhanced main function with program management
 def main
   puts "Ruby Altair Basic 0.0.1, 1975-#{Time.now.year}"
   puts "Type 'HELP' for available commands"
@@ -1380,7 +1379,7 @@ def main
         puts '  CLEAR    - Clear the screen'
         puts '  QUIT     - Exit the interpreter'
       else
-        unless line.strip.empty?  # Skip empty lines
+        unless line.strip.empty?  # skip empty lines
           parts = line.split(' ', 2)
           if parts[0].match?(/^\d+$/)
             line_num = parts[0].to_i
